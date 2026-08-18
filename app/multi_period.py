@@ -12,6 +12,7 @@ from app.niche_grouping import add_niche_key
 from app.competition import calculate_niche_competition
 from app.scoring import score_candidates
 from app.ranking import rank_candidates
+from app.reporting import build_candidate_report
 
 
 def _normalize_product_name(value: object) -> str:
@@ -198,12 +199,6 @@ def combine_period_files(
         on="product_key",
         how="left",
     )
-      candidates = score_candidates(
-          candidates
-)
-      candidates = rank_candidates(
-          candidates
-)
     if (
         not niche_competition.empty
         and "niche_key" in candidates.columns
@@ -233,12 +228,22 @@ def combine_period_files(
         on="niche_key",
         how="left",
     )
+    candidates = score_candidates(
+          candidates
+)
+    candidates = rank_candidates(
+          candidates
+)
+    report = build_candidate_report(
+          candidates
+)
     return {
         "success": True,
         "dataframe": combined,
         "trends": trends,
         "stability": stability,
         "candidates": candidates,
+        "report": report,
         "niche_competition": niche_competition,
         "files_processed": len(frames),
         "files_failed": failed_files,

@@ -1,0 +1,245 @@
+from pathlib import Path
+
+import pandas as pd
+
+from app.trends import (
+    calculate_product_stability,
+    calculate_product_trends,
+)
+from app.pipeline import run_analysis_pipeline
+from app.candidate_features import build_candidate_features
+from app.niche_grouping import add_niche_key
+from app.competition import calculate_niche_competition
+from app.scoring import score_candidates
+from app.ranking import rank_candidates
+
+
+def _normalize_product_name(value: object) -> str:
+    """
+    Нормализует название товара для запасного сопоставления.
+    """
+
+    if pd.isna(value):
+        return ""
+
+    return " ".join(
+        str(value)
+        .strip()
+        .lower()
+        .split()
+    )
+
+
+def _add_product_key(
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Создаёт стабильный ключ товара между периодами.
+
+    Приоритет:
+    1. SKU
+    2. название товара
+    """
+
+    result = dataframe.copy()
+
+    result["product_key"] = ""
+    result["product_key_source"] = ""
+
+    if "sku" in result.columns:
+        sku = (
+            result["sku"]
+            .astype("string")
+            .str.strip()
+        )
+
+        valid_sku = (
+            sku.notna()
+            & (sku != "")
+        )
+
+        result.loc[
+            valid_sku,
+            "product_key",
+        ] = "sku:" + sku[valid_sku]
+
+        result.loc[
+            valid_sku,
+            "product_key_source",
+        ] = "sku"
+
+    missing_key = (
+        result["product_key"] == ""
+    )
+
+    if "product_name" in result.columns:
+        normalized_names = (
+            result["product_name"]
+            .map(_normalize_product_name)
+        )
+
+        valid_name = (
+            missing_key
+            & (normalized_names != "")
+        )
+
+        result.loc[
+            valid_name,
+            "product_key",
+        ] = (
+            "name:"
+            + normalized_names[valid_name]
+        )
+
+        result.loc[
+            valid_name,
+            "product_key_source",
+        ] = "product_name"
+
+    return result
+
+
+def combine_period_files(
+    file_paths: list[str | Path],
+) -> dict[str, object]:
+    """
+    Запускает основной pipeline для каждого файла
+    и объединяет успешные периоды в одну таблицу.
+    """
+
+    frames: list[pd.DataFrame] = []
+    failed_files: list[dict[str, object]] = []
+
+    for file_path in file_paths:
+        result = run_analysis_pipeline(
+            file_path
+        )
+
+        if not result["success"]:
+            failed_files.append(
+                {
+                    "file": str(file_path),
+                    "inspection": result[
+                        "inspection"
+                    ],
+                }
+            )
+            continue
+
+        dataframe = result["dataframe"].copy()
+
+        dataframe["source_file"] = (
+            Path(file_path).name
+        )
+
+        dataframe = _add_product_key(
+            dataframe
+        )
+
+        frames.append(dataframe)
+
+    if not frames:
+        return {
+            "success": False,
+            "dataframe": None,
+            "files_processed": 0,
+            "files_failed": failed_files,
+        }
+
+    combined = pd.concat(
+        frames,
+        ignore_index=True,
+    )
+
+    combined = add_niche_key(
+       combined
+)
+    niche_competition = calculate_niche_competition(
+       combined
+)
+
+    trends = calculate_product_trends(
+       combined
+)
+    stability = calculate_product_stability(
+       combined
+)
+    candidates = build_candidate_features(
+       combined,
+       trends,
+       stability,
+)
+    if "niche_key" in combined.columns:
+      latest_niche_keys = (
+        combined
+        .dropna(
+            subset=[
+                "product_key",
+                "period_start",
+            ]
+        )
+        .sort_values("period_start")
+        .groupby(
+            "product_key",
+            as_index=False,
+        )
+        .tail(1)[
+            [
+                "product_key",
+                "niche_key",
+                "niche_key_source",
+                "niche_key_confidence",
+            ]
+        ]
+    )
+
+      candidates = candidates.merge(
+        latest_niche_keys,
+        on="product_key",
+        how="left",
+    )
+      candidates = score_candidates(
+          candidates
+)
+      candidates = rank_candidates(
+          candidates
+)
+    if (
+        not niche_competition.empty
+        and "niche_key" in candidates.columns
+        and "niche_key" in niche_competition.columns
+):
+        competition_columns = [
+            column
+            for column in [
+                "niche_key",
+                "seller_data_available",
+                "seller_count",
+                "active_seller_count",
+                "strong_seller_count",
+                "strong_seller_share",
+                "top_3_seller_share",
+                "top_10_seller_share",
+                "low_market_depth_warning",
+                "high_competition_warning",
+        ]
+        if column in niche_competition.columns
+    ]
+
+    candidates = candidates.merge(
+        niche_competition[
+            competition_columns
+        ],
+        on="niche_key",
+        how="left",
+    )
+    return {
+        "success": True,
+        "dataframe": combined,
+        "trends": trends,
+        "stability": stability,
+        "candidates": candidates,
+        "niche_competition": niche_competition,
+        "files_processed": len(frames),
+        "files_failed": failed_files,
+    }

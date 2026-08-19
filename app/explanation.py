@@ -1,6 +1,8 @@
 import json
 import pandas as pd
 
+from app.explanation_schema import EXPLANATION_JSON_SCHEMA
+
 
 EXPLANATION_FIELDS = [
     "opportunity_rank",
@@ -49,10 +51,18 @@ def build_explanation_context(
 
         if pd.isna(value):
             context[field] = None
-        elif hasattr(value, "item"):
-            context[field] = value.item()
-        else:
-            context[field] = value
+            continue
+
+        if hasattr(value, "item"):
+            value = value.item()
+
+        if isinstance(value, float):
+            value = round(
+                value,
+                2,
+            )
+
+        context[field] = value
 
     return context
 def build_explanation_prompt(
@@ -95,6 +105,18 @@ def build_explanation_prompt(
    укажи, что границы товарной ниши
    требуют дополнительного подтверждения.
 10. Не предлагай новые цифры от себя.
+11. Все технические значения и статусы из ANALYTICS FACTS
+    воспроизводи точно, без переименования и исправления.
+    Например eligibility_status нельзя переводить,
+    сокращать или заменять другим значением.
+12. Не расширяй смысл метрик.
+    stability_score означает стабильность динамики продаж
+    товара, а не стабильность всего рынка.
+13. В разделе "Что проверить дальше" упоминай только
+    отсутствующие или недостаточно подтвержденные поля,
+    которые присутствуют в ANALYTICS FACTS.
+    Не добавляй новые направления анализа,
+    которых нет среди переданных фактов.
 
 Структура ответа:
 
@@ -114,14 +136,15 @@ def build_explanation_prompt(
 ANALYTICS FACTS:
 {facts_json}
 """.strip()
+
 def generate_explanation(
     context: dict[str, object],
     client,
     model: str = "gpt-5-nano",
-) -> str:
+) -> dict[str, object]:
     """
-    Генерирует AI-объяснение на основе
-    уже рассчитанных аналитических фактов.
+    Генерирует структурированное AI-объяснение
+    на основе уже рассчитанных аналитических фактов.
 
     Score и другие метрики рассчитываются
     до вызова модели.
@@ -134,6 +157,16 @@ def generate_explanation(
     response = client.responses.create(
         model=model,
         input=prompt,
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "marketplace_explanation",
+                "schema": EXPLANATION_JSON_SCHEMA,
+                "strict": True,
+            }
+        },
     )
 
-    return response.output_text
+    return json.loads(
+        response.output_text
+    )

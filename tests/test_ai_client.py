@@ -6,6 +6,11 @@ from app.ai_client import get_openai_client
 def test_missing_api_key_raises_clear_error(
     monkeypatch,
 ):
+    monkeypatch.setattr(
+        "app.ai_client.load_dotenv",
+        lambda: None,
+    )
+
     monkeypatch.delenv(
         "OPENAI_API_KEY",
         raising=False,

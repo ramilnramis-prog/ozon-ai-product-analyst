@@ -10,7 +10,7 @@ def test_explanation_uses_grounded_facts():
     row = pd.Series(
         {
             "product_name": "Тестовый товар",
-            "opportunity_score": 82.5,
+            "opportunity_score": 82.56789,
             "score_coverage": 70.0,
             "eligibility_status": (
                 "insufficient_competition_data"
@@ -32,7 +32,7 @@ def test_explanation_uses_grounded_facts():
 
     assert context[
         "opportunity_score"
-    ] == 82.5
+    ] == 82.57
 
     assert context[
         "competition_score"
@@ -40,6 +40,20 @@ def test_explanation_uses_grounded_facts():
 
     prompt = build_explanation_prompt(
         context
+    )
+    assert (
+        "воспроизводи точно"
+        in prompt
+    )
+
+    assert (
+        "Не расширяй смысл метрик"
+        in prompt
+    )
+
+    assert (
+        "Не добавляй новые направления анализа"
+        in prompt
     )
 
     assert "Тестовый товар" in prompt
@@ -61,16 +75,23 @@ def test_generate_explanation_uses_responses_api():
             *,
             model,
             input,
+            text,
         ):
             calls.append(
                 {
                     "model": model,
                     "input": input,
+                    "text": text,
                 }
             )
 
             return SimpleNamespace(
-                output_text="Тестовое объяснение"
+                output_text=(
+                    '{"summary":"Тестовое объяснение",'
+                    '"strengths":[],'
+                    '"risks":[],'
+                    '"next_checks":[]}'
+                )
             )
 
     fake_client = SimpleNamespace(
@@ -89,21 +110,24 @@ def test_generate_explanation_uses_responses_api():
         model="test-model",
     )
 
-    assert result == "Тестовое объяснение"
+    assert result == {
+        "summary": "Тестовое объяснение",
+        "strengths": [],
+        "risks": [],
+        "next_checks": [],
+    }
 
     assert len(calls) == 1
 
-    assert calls[0][
-        "model"
-    ] == "test-model"
+    assert calls[0]["model"] == "test-model"
 
-    assert "Тестовый товар" in calls[0][
-        "input"
-    ]
+    assert "Тестовый товар" in calls[0]["input"]
 
-    assert "82.5" in calls[0][
-        "input"
-    ]
+    assert calls[0]["text"]["format"]["type"] == (
+        "json_schema"
+    )
+
+    assert calls[0]["text"]["format"]["strict"] is True
 
 def test_generate_explanation_uses_default_model():
     calls = []
@@ -114,16 +138,23 @@ def test_generate_explanation_uses_default_model():
             *,
             model,
             input,
+            text,
         ):
             calls.append(
                 {
                     "model": model,
                     "input": input,
+                    "text": text,
                 }
             )
 
             return SimpleNamespace(
-                output_text="Тестовое объяснение"
+                output_text=(
+                    '{"summary":"Тестовое объяснение",'
+                    '"strengths":[],'
+                    '"risks":[],'
+                    '"next_checks":[]}'
+                )
             )
 
     fake_client = SimpleNamespace(
@@ -143,3 +174,7 @@ def test_generate_explanation_uses_default_model():
     assert calls[0][
         "model"
     ] == "gpt-5-nano"
+
+    assert calls[0][
+        "text"
+    ]["format"]["strict"] is True

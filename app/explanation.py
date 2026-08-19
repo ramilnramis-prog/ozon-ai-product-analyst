@@ -114,3 +114,26 @@ def build_explanation_prompt(
 ANALYTICS FACTS:
 {facts_json}
 """.strip()
+def generate_explanation(
+    context: dict[str, object],
+    client,
+    model: str = "gpt-5-nano",
+) -> str:
+    """
+    Генерирует AI-объяснение на основе
+    уже рассчитанных аналитических фактов.
+
+    Score и другие метрики рассчитываются
+    до вызова модели.
+    """
+
+    prompt = build_explanation_prompt(
+        context
+    )
+
+    response = client.responses.create(
+        model=model,
+        input=prompt,
+    )
+
+    return response.output_text

@@ -46,4 +46,100 @@ def test_explanation_uses_grounded_facts():
     assert '"competition_score": null' in prompt
     assert "Не пересчитывай Opportunity Score" in prompt
     assert "Не придумывай отсутствующие показатели" in prompt
-    
+
+from types import SimpleNamespace
+
+from app.explanation import generate_explanation
+
+
+def test_generate_explanation_uses_responses_api():
+    calls = []
+
+    class FakeResponses:
+        def create(
+            self,
+            *,
+            model,
+            input,
+        ):
+            calls.append(
+                {
+                    "model": model,
+                    "input": input,
+                }
+            )
+
+            return SimpleNamespace(
+                output_text="Тестовое объяснение"
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    context = {
+        "product_name": "Тестовый товар",
+        "opportunity_score": 82.5,
+        "score_coverage": 70.0,
+    }
+
+    result = generate_explanation(
+        context=context,
+        client=fake_client,
+        model="test-model",
+    )
+
+    assert result == "Тестовое объяснение"
+
+    assert len(calls) == 1
+
+    assert calls[0][
+        "model"
+    ] == "test-model"
+
+    assert "Тестовый товар" in calls[0][
+        "input"
+    ]
+
+    assert "82.5" in calls[0][
+        "input"
+    ]
+
+def test_generate_explanation_uses_default_model():
+    calls = []
+
+    class FakeResponses:
+        def create(
+            self,
+            *,
+            model,
+            input,
+        ):
+            calls.append(
+                {
+                    "model": model,
+                    "input": input,
+                }
+            )
+
+            return SimpleNamespace(
+                output_text="Тестовое объяснение"
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    context = {
+        "product_name": "Тестовый товар",
+        "opportunity_score": 80.0,
+    }
+
+    generate_explanation(
+        context=context,
+        client=fake_client,
+    )
+
+    assert calls[0][
+        "model"
+    ] == "gpt-5-nano"

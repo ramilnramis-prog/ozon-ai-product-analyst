@@ -50,6 +50,19 @@ def rank_candidates(
     result["opportunity_rank"] = (
         result.index + 1
     )
+    if "root_category" in result.columns:
+        result["category_rank"] = (
+            result
+            .groupby(
+                "root_category",
+                dropna=True,
+        )
+            .cumcount()
+            .add(1)
+            .astype("Int64")
+    )
+    else:
+        result["category_rank"] = pd.NA
 
     result = result.drop(
         columns=["_status_priority"]

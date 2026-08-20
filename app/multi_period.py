@@ -9,10 +9,12 @@ from app.trends import (
 from app.pipeline import run_analysis_pipeline
 from app.candidate_features import build_candidate_features
 from app.niche_grouping import add_niche_key
+from app.product_attributes import add_product_attributes
 from app.competition import calculate_niche_competition
 from app.scoring import score_candidates
 from app.ranking import rank_candidates
 from app.reporting import build_candidate_report
+
 
 
 def _normalize_product_name(value: object) -> str:
@@ -150,6 +152,10 @@ def combine_period_files(
     combined = pd.concat(
         frames,
         ignore_index=True,
+    )
+
+    combined = add_product_attributes(
+        combined
     )
 
     combined = add_niche_key(

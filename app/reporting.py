@@ -1,5 +1,7 @@
 import pandas as pd
 
+from app.niche_grouping import normalize_niche_text
+
 
 REPORT_COLUMNS = [
     "opportunity_rank",
@@ -52,3 +54,82 @@ def build_candidate_report(
     ].copy()
 
     return report
+
+def build_category_top(
+    dataframe: pd.DataFrame,
+    top_n: int = 10,
+) -> pd.DataFrame:
+    """
+    Формирует TOP товаров внутри каждой основной категории.
+
+    Одинаковые нормализованные названия товара
+    считаются одной товарной концепцией только
+    для категорийного отчета.
+    """
+
+    required_columns = {
+        "root_category",
+        "product_name",
+        "opportunity_score",
+    }
+
+    missing_columns = (
+        required_columns - set(dataframe.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing category top columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    result = dataframe.copy()
+
+    result = result[
+        result["root_category"].notna()
+        & result["product_name"].notna()
+    ].copy()
+
+    result["_product_concept_key"] = (
+        result["product_name"]
+        .map(normalize_niche_text)
+    )
+
+    if "opportunity_rank" in result.columns:
+        result = result.sort_values(
+            "opportunity_rank",
+            ascending=True,
+            na_position="last",
+    )
+    else:
+        result = result.sort_values(
+            "opportunity_score",
+            ascending=False,
+            na_position="last",
+    )
+
+    result = result.drop_duplicates(
+        subset=[
+            "root_category",
+            "_product_concept_key",
+        ],
+        keep="first",
+    )
+
+    result["category_rank"] = (
+        result
+        .groupby("root_category")
+        .cumcount()
+        .add(1)
+        .astype("Int64")
+    )
+
+    result = result[
+        result["category_rank"] <= top_n
+    ].copy()
+
+    result = result.drop(
+        columns=["_product_concept_key"]
+    )
+
+    return result.reset_index(drop=True)

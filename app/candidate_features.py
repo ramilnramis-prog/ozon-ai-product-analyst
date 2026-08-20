@@ -53,6 +53,7 @@ def build_candidate_features(
         "product_name",
         "sku",
         "category",
+        "root_category",
         "brand",
         "price",
         "sales_units",

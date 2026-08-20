@@ -50,17 +50,72 @@ def rank_candidates(
     result["opportunity_rank"] = (
         result.index + 1
     )
+
     if "root_category" in result.columns:
-        result["category_rank"] = (
-            result
-            .groupby(
-                "root_category",
-                dropna=True,
+        category_score_column = (
+            "category_opportunity_score"
+            if "category_opportunity_score" in result.columns
+            else "opportunity_score"
         )
-            .cumcount()
-            .add(1)
+
+        category_order = result.copy()
+
+        category_order["_category_score_for_rank"] = (
+            pd.to_numeric(
+                category_order[category_score_column],
+                errors="coerce",
+            )
+            .round(2)
+        )
+
+        category_order = category_order.sort_values(
+            by=[
+                "root_category",
+                "_status_priority",
+                "_category_score_for_rank",
+                "opportunity_rank",
+            ],
+            ascending=[
+                True,
+                True,
+                False,
+                True,
+            ],
+            na_position="last",
+        ).copy()
+
+        same_category = category_order["root_category"].eq(
+            category_order["root_category"].shift()
+        )
+
+        same_status = category_order["_status_priority"].eq(
+            category_order["_status_priority"].shift()
+        )
+
+        same_score = category_order["_category_score_for_rank"].eq(
+            category_order["_category_score_for_rank"].shift()
+        )
+
+        new_rank_group = ~(
+            same_category
+            & same_status
+            & same_score
+        )
+
+        category_order["_category_rank"] = (
+            new_rank_group
+            .groupby(
+                category_order["root_category"],
+                dropna=True,
+            )
+            .cumsum()
             .astype("Int64")
-    )
+        )
+
+        result["category_rank"] = (
+            category_order["_category_rank"]
+            .reindex(result.index)
+        )
     else:
         result["category_rank"] = pd.NA
 

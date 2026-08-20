@@ -3,6 +3,7 @@ import pandas as pd
 from app.reporting import (
     build_candidate_report,
     build_category_top,
+    build_unclassified_top,
 )
 
 
@@ -122,4 +123,194 @@ def test_category_top_respects_opportunity_rank():
     assert result["category_rank"].tolist() == [
         1,
         2,
+    ]
+
+def test_category_top_prefers_category_rank():
+    dataframe = pd.DataFrame(
+        {
+            "product_name": [
+                "Товар A",
+                "Товар B",
+                "Товар C",
+            ],
+            "root_category": [
+                "Дом и сад",
+                "Дом и сад",
+                "Дом и сад",
+            ],
+            "opportunity_score": [
+                95.0,
+                90.0,
+                85.0,
+            ],
+            "opportunity_rank": [
+                1,
+                2,
+                3,
+            ],
+            "category_rank": [
+                3,
+                1,
+                2,
+            ],
+        }
+    )
+
+    result = build_category_top(
+        dataframe,
+        top_n=3,
+    )
+
+    assert result["product_name"].tolist() == [
+        "Товар B",
+        "Товар C",
+        "Товар A",
+    ]
+
+    assert result["category_rank"].tolist() == [
+        1,
+        2,
+        3,
+    ]
+def test_category_top_preserves_tied_category_ranks():
+    dataframe = pd.DataFrame(
+        {
+            "product_name": [
+                "Товар A",
+                "Товар B",
+                "Товар C",
+            ],
+            "root_category": [
+                "Дом и сад",
+                "Дом и сад",
+                "Дом и сад",
+            ],
+            "opportunity_score": [
+                90.0,
+                89.0,
+                80.0,
+            ],
+            "opportunity_rank": [
+                1,
+                2,
+                3,
+            ],
+            "category_rank": [
+                1,
+                1,
+                2,
+            ],
+        }
+    )
+
+    result = build_category_top(
+        dataframe,
+        top_n=3,
+    )
+
+    assert result["product_name"].tolist() == [
+        "Товар A",
+        "Товар B",
+        "Товар C",
+    ]
+
+    assert result["category_rank"].tolist() == [
+        1,
+        1,
+        2,
+    ]
+
+def test_build_unclassified_top_groups_products_by_review_status():
+    dataframe = pd.DataFrame(
+        {
+            "product_name": [
+                "Товар A",
+                "Товар B",
+                "Товар C",
+                "Товар D",
+            ],
+            "root_category": [
+                pd.NA,
+                "",
+                "Дом и сад",
+                pd.NA,
+            ],
+            "eligibility_status": [
+                "eligible",
+                "insufficient_competition_data",
+                "eligible",
+                "insufficient_competition_data",
+            ],
+            "opportunity_score": [
+                80.0,
+                75.0,
+                95.0,
+                70.0,
+            ],
+            "opportunity_rank": [
+                2,
+                3,
+                1,
+                4,
+            ],
+        }
+    )
+
+    result = build_unclassified_top(
+        dataframe,
+        top_n=2,
+    )
+
+    assert result["product_name"].tolist() == [
+        "Товар A",
+        "Товар B",
+        "Товар D",
+    ]
+
+    assert result["review_group"].tolist() == [
+        "ready_for_evaluation",
+        "needs_competition_data",
+        "needs_competition_data",
+    ]
+
+    assert result["review_priority"].tolist() == [
+        1,
+        1,
+        2,
+    ]
+
+    assert "Товар C" not in result["product_name"].tolist()
+
+def test_build_unclassified_top_marks_rejected_products():
+    dataframe = pd.DataFrame(
+        {
+            "product_name": [
+                "Товар A",
+            ],
+            "root_category": [
+                pd.NA,
+            ],
+            "eligibility_status": [
+                "rejected_low_market_depth",
+            ],
+            "opportunity_score": [
+                80.0,
+            ],
+            "opportunity_rank": [
+                100,
+            ],
+        }
+    )
+
+    result = build_unclassified_top(
+        dataframe,
+        top_n=5,
+    )
+
+    assert result["review_group"].tolist() == [
+        "rejected",
+    ]
+
+    assert result["review_priority"].tolist() == [
+        1,
     ]

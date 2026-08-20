@@ -117,6 +117,107 @@ def add_demand_score(
     )
 
     return result
+
+def add_category_demand_score(
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Рассчитывает Demand Score 0–100
+    отдельно внутри каждой root_category.
+
+    Глобальный demand_score не изменяет.
+    """
+
+    result = dataframe.copy()
+
+    result["category_demand_score"] = pd.Series(
+        pd.NA,
+        index=result.index,
+        dtype="Float64",
+    )
+
+    if "root_category" not in result.columns:
+        return result
+
+    score_columns = []
+
+    if "latest_sales_per_day" in result.columns:
+        sales_score = pd.Series(
+            pd.NA,
+            index=result.index,
+            dtype="Float64",
+        )
+
+        for _, group in result[
+            result["root_category"].notna()
+        ].groupby("root_category"):
+            sales_score.loc[group.index] = (
+                percentile_score(
+                    group["latest_sales_per_day"]
+                )
+            )
+
+        result["_category_sales_demand_score"] = (
+            sales_score
+        )
+
+        score_columns.append(
+            "_category_sales_demand_score"
+        )
+
+    if "latest_revenue_per_day" in result.columns:
+        revenue_score = pd.Series(
+            pd.NA,
+            index=result.index,
+            dtype="Float64",
+        )
+
+        for _, group in result[
+            result["root_category"].notna()
+        ].groupby("root_category"):
+            revenue_score.loc[group.index] = (
+                percentile_score(
+                    group["latest_revenue_per_day"]
+                )
+            )
+
+        result["_category_revenue_demand_score"] = (
+            revenue_score
+        )
+
+        score_columns.append(
+            "_category_revenue_demand_score"
+        )
+
+    if not score_columns:
+        return result
+
+    result["category_demand_score"] = (
+        result[score_columns]
+        .mean(
+            axis=1,
+            skipna=True,
+        )
+    )
+
+    no_data = (
+        result[score_columns]
+        .notna()
+        .sum(axis=1)
+        == 0
+    )
+
+    result.loc[
+        no_data,
+        "category_demand_score",
+    ] = pd.NA
+
+    result = result.drop(
+        columns=score_columns
+    )
+
+    return result
+
 def add_growth_score(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -529,8 +630,91 @@ def add_opportunity_score(
         / sum(SCORE_WEIGHTS.values())
         * 100.0
     )
+    return result
+
+def add_category_opportunity_score(
+    dataframe: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Рассчитывает Opportunity Score 0–100
+    для сравнения товаров внутри root_category.
+
+    Отличие от глобального Opportunity Score:
+    вместо demand_score используется
+    category_demand_score.
+
+    Остальные компоненты остаются прежними.
+    """
+
+    result = dataframe.copy()
+
+    score_mapping = {
+        "category_demand_score": SCORE_WEIGHTS["demand"],
+        "growth_score": SCORE_WEIGHTS["growth"],
+        "stability_score": SCORE_WEIGHTS["stability"],
+        "competition_score": SCORE_WEIGHTS["competition"],
+        "concentration_score": SCORE_WEIGHTS[
+            "concentration"
+        ],
+    }
+
+    weighted_sum = pd.Series(
+        0.0,
+        index=result.index,
+    )
+
+    available_weight = pd.Series(
+        0.0,
+        index=result.index,
+    )
+
+    for column, weight in score_mapping.items():
+        if column not in result.columns:
+            continue
+
+        values = pd.to_numeric(
+            result[column],
+            errors="coerce",
+        )
+
+        valid = values.notna()
+
+        if not valid.any():
+            continue
+
+        weighted_sum.loc[valid] = (
+            weighted_sum.loc[valid]
+            + values.loc[valid].astype("float64")
+            * weight
+        )
+
+        available_weight.loc[valid] += weight
+
+    result["category_opportunity_score"] = pd.NA
+
+    has_score = available_weight > 0
+
+    if "root_category" in result.columns:
+        has_score &= result["root_category"].notna()
+    else:
+        has_score &= False
+
+    result.loc[
+        has_score,
+        "category_opportunity_score",
+    ] = (
+        weighted_sum.loc[has_score]
+        / available_weight.loc[has_score]
+    )
+
+    result["category_score_coverage"] = (
+        available_weight
+        / sum(SCORE_WEIGHTS.values())
+        * 100.0
+    )
 
     return result
+
 def add_eligibility_status(
     dataframe: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -607,6 +791,10 @@ def score_candidates(
         result
     )
 
+    result = add_category_demand_score(
+        result
+    )
+
     result = add_growth_score(
         result
     )
@@ -624,6 +812,9 @@ def score_candidates(
     )
 
     result = add_opportunity_score(
+        result
+    )
+    result = add_category_opportunity_score(
         result
     )
 

@@ -74,6 +74,104 @@ def add_niche_key(
         result["niche_key"] == ""
     )
 
+    if all(
+        column in result.columns
+        for column in (
+            "root_category",
+            "leaf_category",
+            "functional_family",
+        )
+    ):
+        normalized_root = result[
+            "root_category"
+        ].map(normalize_niche_text)
+
+        normalized_leaf = result[
+            "leaf_category"
+        ].map(normalize_niche_text)
+
+        normalized_family = result[
+            "functional_family"
+        ].map(normalize_niche_text)
+
+        use_family = (
+            missing_key
+            & (normalized_root != "")
+            & (normalized_leaf != "")
+            & (normalized_family != "")
+        )
+
+        result.loc[
+            use_family,
+            "niche_key",
+        ] = (
+            "family:"
+            + normalized_root[use_family]
+            + ":"
+            + normalized_leaf[use_family]
+            + ":"
+            + normalized_family[use_family]
+        )
+
+        result.loc[
+            use_family,
+            "niche_key_source",
+        ] = "functional_family"
+
+        result.loc[
+            use_family,
+            "niche_key_confidence",
+        ] = "high"
+
+    missing_key = (
+        result["niche_key"] == ""
+    )
+
+    if all(
+        column in result.columns
+        for column in (
+            "root_category",
+            "leaf_category",
+        )
+    ):
+        normalized_root = result[
+            "root_category"
+        ].map(normalize_niche_text)
+
+        normalized_leaf = result[
+            "leaf_category"
+        ].map(normalize_niche_text)
+
+        use_category_context = (
+            missing_key
+            & (normalized_root != "")
+            & (normalized_leaf != "")
+        )
+
+        result.loc[
+            use_category_context,
+            "niche_key",
+        ] = (
+            "category:"
+            + normalized_root[use_category_context]
+            + ":"
+            + normalized_leaf[use_category_context]
+        )
+
+        result.loc[
+            use_category_context,
+            "niche_key_source",
+        ] = "category_context"
+
+        result.loc[
+            use_category_context,
+            "niche_key_confidence",
+        ] = "medium"
+
+    missing_key = (
+        result["niche_key"] == ""
+    )
+
     if "category" in result.columns:
         normalized_category = result[
             "category"

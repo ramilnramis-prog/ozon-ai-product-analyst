@@ -6,6 +6,11 @@ from app.trends import (
     calculate_product_stability,
     calculate_product_trends,
 )
+
+from app.category_classification_ai import (
+    classify_category_dataframe_group,
+)
+
 from app.pipeline import run_analysis_pipeline
 from app.candidate_features import build_candidate_features
 from app.niche_grouping import add_niche_key
@@ -104,6 +109,7 @@ def _add_product_key(
 
 def combine_period_files(
     file_paths: list[str | Path],
+    classification_client=None,
 ) -> dict[str, object]:
     """
     Запускает основной pipeline для каждого файла
@@ -158,24 +164,78 @@ def combine_period_files(
         combined
     )
 
+    if classification_client is not None:
+        category_pairs = (
+            combined[
+                [
+                    "root_category",
+                    "leaf_category",
+                ]
+            ]
+            .dropna()
+            .drop_duplicates()
+        )
+
+        for _, category_row in (
+            category_pairs.iterrows()
+        ):
+            root_category = category_row[
+                "root_category"
+            ]
+            leaf_category = category_row[
+                "leaf_category"
+            ]
+
+            if (
+                not str(root_category).strip()
+                or not str(leaf_category).strip()
+            ):
+                continue
+
+            classified = (
+                classify_category_dataframe_group(
+                    dataframe=combined,
+                    category_name=leaf_category,
+                    root_category=root_category,
+                    client=classification_client,
+                )
+            )
+
+            for column in (
+                "functional_family",
+                "functional_family_status",
+                "category_type",
+                "category_classification_confidence",
+            ):
+                if column not in classified.columns:
+                    continue
+
+                if column not in combined.columns:
+                    combined[column] = pd.NA
+
+                combined.loc[
+                    classified.index,
+                    column,
+                ] = classified[column]
+
     combined = add_niche_key(
        combined
-)
+    )
     niche_competition = calculate_niche_competition(
        combined
-)
+    )
 
     trends = calculate_product_trends(
        combined
-)
+    )
     stability = calculate_product_stability(
        combined
-)
+    )
     candidates = build_candidate_features(
        combined,
        trends,
        stability,
-)
+    )
     if "niche_key" in combined.columns:
       latest_niche_keys = (
         combined
@@ -209,7 +269,7 @@ def combine_period_files(
         not niche_competition.empty
         and "niche_key" in candidates.columns
         and "niche_key" in niche_competition.columns
-):
+    ):
         competition_columns = [
             column
             for column in [
@@ -223,17 +283,18 @@ def combine_period_files(
                 "top_10_seller_share",
                 "low_market_depth_warning",
                 "high_competition_warning",
+            ]
+            if column in niche_competition.columns
         ]
-        if column in niche_competition.columns
-    ]
 
-    candidates = candidates.merge(
-        niche_competition[
-            competition_columns
-        ],
-        on="niche_key",
-        how="left",
-    )
+        candidates = candidates.merge(
+            niche_competition[
+                competition_columns
+            ],
+            on="niche_key",
+            how="left",
+        )
+
     candidates = score_candidates(
           candidates
 )

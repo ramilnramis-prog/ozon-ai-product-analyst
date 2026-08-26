@@ -446,10 +446,32 @@ def generate_family_resolutions(
             )
 
         if normalized_product_name in returned_products:
-            raise ValueError(
-                "AI returned duplicate product: "
-                f"{item['product_name']}"
+            existing_resolution = next(
+                resolution
+                for resolution in resolutions
+                if (
+                    resolution["product_name"]
+                    == normalized_product_name
+                )
             )
+
+            if (
+                existing_resolution["family_name"]
+                == family_name
+            ):
+                existing_resolution["confidence"] = max(
+                    float(existing_resolution["confidence"]),
+                    confidence,
+                )
+            else:
+                existing_resolution[
+                    "family_name"
+                ] = "unresolved"
+                existing_resolution[
+                    "confidence"
+                ] = 0.0
+
+            continue
 
         returned_products.append(
             normalized_product_name
@@ -463,17 +485,20 @@ def generate_family_resolutions(
             }
         )
 
-    missing_products = (
-        expected_product_set
-        - set(returned_products)
+    returned_product_set = set(
+        returned_products
     )
 
-    if missing_products:
-        raise ValueError(
-            "AI omitted products: "
-            + ", ".join(
-                sorted(missing_products)
-            )
+    for product_name in expected_products:
+        if product_name in returned_product_set:
+            continue
+
+        resolutions.append(
+            {
+                "product_name": product_name,
+                "family_name": "unresolved",
+                "confidence": 0.0,
+            }
         )
 
     return resolutions
@@ -843,6 +868,20 @@ def generate_category_repair(
         unresolved_products=unresolved_products,
     )
 
+    repair_schema = json.loads(
+        json.dumps(
+            CATEGORY_CLASSIFICATION_JSON_SCHEMA
+        )
+    )
+
+    repair_schema[
+        "properties"
+    ][
+        "category_type"
+    ]["enum"] = [
+        classification.category_type
+    ]
+
     response = client.responses.create(
         model=model,
         input=prompt,
@@ -850,7 +889,7 @@ def generate_category_repair(
             "format": {
                 "type": "json_schema",
                 "name": "category_repair",
-                "schema": CATEGORY_CLASSIFICATION_JSON_SCHEMA,
+                "schema": repair_schema,
                 "strict": True,
             }
         },
@@ -872,28 +911,36 @@ def generate_category_repair(
         ]
     )
 
+    repaired_by_name = {
+        rule.name: rule
+        for rule in repaired_rules
+    }
+
+    merged_rules = []
+
+    for rule in classification.functional_families:
+        merged_rules.append(
+            repaired_by_name.get(
+                rule.name,
+                rule,
+            )
+        )
+
     existing_names = {
         rule.name
         for rule in classification.functional_families
     }
 
-    repaired_names = {
-        rule.name
-        for rule in repaired_rules
-    }
+    merged_names = set(existing_names)
 
-    missing_existing = (
-        existing_names
-        - repaired_names
-    )
+    for rule in repaired_rules:
+        if rule.name in merged_names:
+            continue
 
-    if missing_existing:
-        raise ValueError(
-            "Repair removed existing functional families: "
-            + ", ".join(
-                sorted(missing_existing)
-            )
-        )
+        merged_rules.append(rule)
+        merged_names.add(rule.name)
+
+    merged_rules = tuple(merged_rules)
 
     if (
         data["category_type"]
@@ -915,6 +962,6 @@ def generate_category_repair(
     return CategoryClassification(
         category_name=str(category_name).strip(),
         category_type=data["category_type"],
-        functional_families=repaired_rules,
+        functional_families=merged_rules,
         confidence=confidence,
     )

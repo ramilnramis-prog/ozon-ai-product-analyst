@@ -2,6 +2,7 @@ from app.product_attributes import (
     add_product_attributes,
     detect_power_source,
     extract_category_depth,
+    detect_product_role,
     extract_leaf_category,
     extract_root_category,
 )
@@ -40,6 +41,45 @@ def test_returns_none_when_power_source_is_unknown():
 
 def test_returns_none_for_empty_value():
     assert detect_power_source(None) is None
+
+def test_detect_product_role_consumable():
+    assert (
+        detect_product_role(
+            "Леска для триммера 3 мм 30 м"
+        )
+        == "consumable"
+    )
+
+
+def test_detect_product_role_spare_part():
+    assert (
+        detect_product_role(
+            "Нож для газонокосилки Champion"
+        )
+        == "spare_part"
+    )
+
+
+def test_detect_product_role_accessory():
+    assert (
+        detect_product_role(
+            "Шланг для мойки высокого давления 10 метров"
+        )
+        == "accessory"
+    )
+
+
+def test_detect_product_role_does_not_guess_main_product():
+    assert (
+        detect_product_role(
+            "Триммер аккумуляторный садовый"
+        )
+        is None
+    )
+
+
+def test_detect_product_role_handles_empty_value():
+    assert detect_product_role(None) is None
 
 import pandas as pd
 
@@ -150,3 +190,29 @@ def test_extract_root_category_handles_single_level():
 def test_extract_root_category_handles_empty_value():
     assert extract_root_category(None) is None
     assert extract_root_category("") is None
+
+def test_add_product_attributes_adds_product_role():
+    dataframe = pd.DataFrame(
+        {
+            "product_name": [
+                "Леска для триммера 3 мм",
+                "Нож для газонокосилки Champion",
+                "Шланг для мойки высокого давления",
+                "Триммер аккумуляторный садовый",
+            ]
+        }
+    )
+
+    result = add_product_attributes(dataframe)
+
+    assert (
+        result["product_role"]
+        .astype("string")
+        .fillna("unknown")
+        .tolist()
+    ) == [
+        "consumable",
+        "spare_part",
+        "accessory",
+        "unknown",
+    ]

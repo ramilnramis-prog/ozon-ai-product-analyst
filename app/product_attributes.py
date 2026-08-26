@@ -33,6 +33,61 @@ def detect_power_source(
 
     return None
 
+def detect_product_role(
+    product_name: object,
+) -> str | None:
+    """
+    Определяет явную роль товара по названию.
+
+    Возвращает роль только при достаточно
+    явном признаке. Основной товар не угадывает.
+    """
+
+    name = normalize_niche_text(product_name)
+
+    if not name:
+        return None
+
+    if " для " not in f" {name} ":
+        return None
+
+    consumable_markers = (
+        "леска",
+        "корд",
+    )
+
+    spare_part_markers = (
+        "нож",
+        "лезвие",
+    )
+
+    accessory_markers = (
+        "шланг",
+        "чехол",
+        "адаптер",
+        "насадка",
+    )
+
+    if any(
+        marker in name
+        for marker in consumable_markers
+    ):
+        return "consumable"
+
+    if any(
+        marker in name
+        for marker in spare_part_markers
+    ):
+        return "spare_part"
+
+    if any(
+        marker in name
+        for marker in accessory_markers
+    ):
+        return "accessory"
+
+    return None
+
 def extract_leaf_category(
     category: object,
 ) -> str | None:
@@ -122,12 +177,19 @@ def add_product_attributes(
 
     if "product_name" in result.columns:
         result["power_source"] = (
-          result["product_name"]
-          .map(detect_power_source)
-          .astype("string")
-    )
+            result["product_name"]
+            .map(detect_power_source)
+            .astype("string")
+        )
+
+        result["product_role"] = (
+            result["product_name"]
+            .map(detect_product_role)
+            .astype("string")
+        )
     else:
         result["power_source"] = pd.NA
+        result["product_role"] = pd.NA
 
     if "category" in result.columns:
         result["root_category"] = (

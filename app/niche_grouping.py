@@ -113,6 +113,30 @@ def add_niche_key(
             + normalized_family[use_family]
         )
 
+        if "product_role" in result.columns:
+            normalized_role = result[
+                "product_role"
+            ].map(normalize_niche_text)
+
+            use_product_role = (
+                use_family
+                & (normalized_role != "")
+            )
+
+            result.loc[
+                use_product_role,
+                "niche_key",
+            ] = (
+                result.loc[
+                    use_product_role,
+                    "niche_key",
+                ]
+                + ":role:"
+                + normalized_role[
+                    use_product_role
+                ]
+            )
+            
         result.loc[
             use_family,
             "niche_key_source",

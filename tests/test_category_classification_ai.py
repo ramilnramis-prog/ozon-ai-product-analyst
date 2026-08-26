@@ -368,44 +368,8 @@ def test_generate_family_resolutions_rejects_unknown_family():
             client=fake_client,
         )
 
-def test_generate_family_resolutions_rejects_missing_product():
-    class FakeResponses:
-        def create(self, **kwargs):
-            return SimpleNamespace(
-                output_text=json.dumps(
-                    {
-                        "resolutions": [
-                            {
-                                "product_name": "Товар A",
-                                "family_name": "cultivator",
-                                "confidence": 0.9,
-                            }
-                        ]
-                    },
-                    ensure_ascii=False,
-                )
-            )
 
-    fake_client = SimpleNamespace(
-        responses=FakeResponses()
-    )
-
-    with pytest.raises(
-        ValueError,
-        match="AI omitted products",
-    ):
-        generate_family_resolutions(
-            product_names=[
-                "Товар A",
-                "Товар B",
-            ],
-            allowed_families=(
-                "cultivator",
-                "walk_behind_tractor",
-            ),
-            client=fake_client,
-        )
-def test_generate_family_resolutions_rejects_duplicate_product():
+def test_generate_family_resolutions_collapses_duplicate_same_family():
     class FakeResponses:
         def create(self, **kwargs):
             return SimpleNamespace(
@@ -432,20 +396,71 @@ def test_generate_family_resolutions_rejects_duplicate_product():
         responses=FakeResponses()
     )
 
-    with pytest.raises(
-        ValueError,
-        match="AI returned duplicate product",
-    ):
-        generate_family_resolutions(
-            product_names=[
-                "Товар A",
-            ],
-            allowed_families=(
-                "cultivator",
-                "walk_behind_tractor",
-            ),
-            client=fake_client,
-        )
+    result = generate_family_resolutions(
+        product_names=[
+            "Товар A",
+        ],
+        allowed_families=(
+            "cultivator",
+            "walk_behind_tractor",
+        ),
+        client=fake_client,
+    )
+
+    assert result == [
+        {
+            "product_name": "товар a",
+            "family_name": "cultivator",
+            "confidence": 0.9,
+        }
+    ]
+
+
+def test_generate_family_resolutions_conflicting_duplicate_becomes_unresolved():
+    class FakeResponses:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "resolutions": [
+                            {
+                                "product_name": "Товар A",
+                                "family_name": "cultivator",
+                                "confidence": 0.9,
+                            },
+                            {
+                                "product_name": "Товар A",
+                                "family_name": "walk_behind_tractor",
+                                "confidence": 0.85,
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    result = generate_family_resolutions(
+        product_names=[
+            "Товар A",
+        ],
+        allowed_families=(
+            "cultivator",
+            "walk_behind_tractor",
+        ),
+        client=fake_client,
+    )
+
+    assert result == [
+        {
+            "product_name": "товар a",
+            "family_name": "unresolved",
+            "confidence": 0.0,
+        }
+    ]
 
 def test_generate_family_resolutions_rejects_unexpected_product():
     class FakeResponses:
@@ -818,7 +833,7 @@ def test_generate_category_repair_adds_missing_family():
 
     assert result.confidence == 0.9
 
-def test_generate_category_repair_rejects_removed_existing_family():
+def test_generate_category_repair_preserves_omitted_existing_family():
     classification = CategoryClassification(
         category_name=(
             "Мотоблоки, культиваторы и электротяпки"
@@ -867,20 +882,36 @@ def test_generate_category_repair_rejects_removed_existing_family():
         responses=FakeResponses()
     )
 
-    with pytest.raises(
-        ValueError,
-        match="Repair removed existing functional families",
-    ):
-        generate_category_repair(
-            category_name=(
-                "Мотоблоки, культиваторы и электротяпки"
-            ),
-            classification=classification,
-            unresolved_products=[
-                "MATAKLA Электротяпка",
-            ],
-            client=fake_client,
-        )
+    result = generate_category_repair(
+        category_name=(
+            "Мотоблоки, культиваторы и электротяпки"
+        ),
+        classification=classification,
+        unresolved_products=[
+            "MATAKLA Электротяпка",
+        ],
+        client=fake_client,
+    )
+
+    assert [
+        rule.name
+        for rule in result.functional_families
+    ] == [
+        "motoblock",
+        "cultivator",
+        "electric_hoe",
+    ]
+
+    assert result.functional_families[0].keywords == (
+        "мотоблок",
+    )
+
+    assert result.functional_families[2].keywords == (
+        "электротяпка",
+    )
+
+    assert result.category_type == "mixed"
+    assert result.confidence == 0.9
 
 def test_classify_category_dataframe_group_separates_same_leaf_by_root(
     tmp_path,
@@ -973,6 +1004,53 @@ def test_classify_category_dataframe_group_separates_same_leaf_by_root(
     assert "автотовары:аксессуары" in cache
     assert "дом и сад:аксессуары" not in cache
 
+def test_generate_family_resolutions_marks_omitted_product_unresolved():
+    class FakeResponses:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "resolutions": [
+                            {
+                                "product_name": "Товар A",
+                                "family_name": "cultivator",
+                                "confidence": 0.9,
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    result = generate_family_resolutions(
+        product_names=[
+            "Товар A",
+            "Товар B",
+        ],
+        allowed_families=(
+            "cultivator",
+            "walk_behind_tractor",
+        ),
+        client=fake_client,
+    )
+
+    assert result == [
+        {
+            "product_name": "товар a",
+            "family_name": "cultivator",
+            "confidence": 0.9,
+        },
+        {
+            "product_name": "товар b",
+            "family_name": "unresolved",
+            "confidence": 0.0,
+        },
+    ]
+
 def test_generate_family_resolutions_restricts_schema_to_batch_products():
     class FakeResponses:
         def create(self, **kwargs):
@@ -1043,3 +1121,85 @@ def test_generate_family_resolutions_restricts_schema_to_batch_products():
     )
 
     assert len(result) == 2
+
+def test_generate_category_repair_restricts_category_type_schema():
+    classification = CategoryClassification(
+        category_name=(
+            "Мотоблоки, культиваторы и электротяпки"
+        ),
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="motoblock",
+                keywords=("мотоблок",),
+            ),
+            FunctionalFamilyRule(
+                name="cultivator",
+                keywords=("культиватор",),
+            ),
+        ),
+        confidence=0.82,
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            schema = (
+                kwargs["text"]
+                ["format"]
+                ["schema"]
+            )
+
+            assert (
+                schema["properties"]
+                ["category_type"]
+                ["enum"]
+            ) == [
+                "mixed",
+            ]
+
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "motoblock",
+                                "keywords": [
+                                    "мотоблок",
+                                ],
+                            },
+                            {
+                                "name": "cultivator",
+                                "keywords": [
+                                    "культиватор",
+                                ],
+                            },
+                            {
+                                "name": "electric_hoe",
+                                "keywords": [
+                                    "электротяпка",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    repaired = generate_category_repair(
+        category_name=(
+            "Мотоблоки, культиваторы и электротяпки"
+        ),
+        classification=classification,
+        unresolved_products=[
+            "MATAKLA Электротяпка",
+        ],
+        client=fake_client,
+    )
+
+    assert repaired.category_type == "mixed"

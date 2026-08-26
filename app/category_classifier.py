@@ -140,7 +140,7 @@ def category_needs_ai(
     return key not in known_category_keys
 
 DEFAULT_CATEGORY_CACHE_PATH = Path(
-    "config/category_classifications.json"
+    "data/cache/category_classifications.json"
 )
 
 

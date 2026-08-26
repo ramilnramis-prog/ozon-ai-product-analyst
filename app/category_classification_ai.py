@@ -361,6 +361,39 @@ def generate_family_resolutions(
         expected_products
     )
 
+    resolution_schema = json.loads(
+        json.dumps(
+            FAMILY_RESOLUTION_JSON_SCHEMA
+        )
+    )
+
+    resolution_properties = (
+        resolution_schema[
+            "properties"
+        ][
+            "resolutions"
+        ][
+            "items"
+        ][
+            "properties"
+        ]
+    )
+
+    resolution_properties[
+        "product_name"
+    ]["enum"] = expected_products
+
+    resolution_properties[
+        "family_name"
+    ]["enum"] = list(
+        dict.fromkeys(
+            (
+                *allowed_families,
+                "unresolved",
+            )
+        )
+    )
+
     response = client.responses.create(
         model=model,
         input=prompt,
@@ -368,7 +401,7 @@ def generate_family_resolutions(
             "format": {
                 "type": "json_schema",
                 "name": "family_resolution",
-                "schema": FAMILY_RESOLUTION_JSON_SCHEMA,
+                "schema": resolution_schema,
                 "strict": True,
             }
         },

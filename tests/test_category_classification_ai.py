@@ -972,3 +972,74 @@ def test_classify_category_dataframe_group_separates_same_leaf_by_root(
 
     assert "автотовары:аксессуары" in cache
     assert "дом и сад:аксессуары" not in cache
+
+def test_generate_family_resolutions_restricts_schema_to_batch_products():
+    class FakeResponses:
+        def create(self, **kwargs):
+            schema = (
+                kwargs["text"]
+                ["format"]
+                ["schema"]
+            )
+
+            properties = (
+                schema["properties"]
+                ["resolutions"]
+                ["items"]
+                ["properties"]
+            )
+
+            assert properties[
+                "product_name"
+            ]["enum"] == [
+                "газонокосилка oasis gbe 3 eco",
+                "триммер deko",
+            ]
+
+            assert properties[
+                "family_name"
+            ]["enum"] == [
+                "mower",
+                "trimmer",
+                "unresolved",
+            ]
+
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "resolutions": [
+                            {
+                                "product_name": (
+                                    "газонокосилка oasis gbe 3 eco"
+                                ),
+                                "family_name": "mower",
+                                "confidence": 0.95,
+                            },
+                            {
+                                "product_name": "триммер deko",
+                                "family_name": "trimmer",
+                                "confidence": 0.9,
+                            },
+                        ]
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    result = generate_family_resolutions(
+        product_names=[
+            "Газонокосилка OASIS GBE-3 ECO",
+            "Триммер DEKO",
+        ],
+        allowed_families=(
+            "mower",
+            "trimmer",
+        ),
+        client=fake_client,
+    )
+
+    assert len(result) == 2

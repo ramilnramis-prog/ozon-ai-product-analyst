@@ -2,6 +2,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from app.category_classifier import (
+    get_cached_category_classification,
+)
+
 from app.trends import (
     calculate_product_stability,
     calculate_product_trends,
@@ -110,6 +114,7 @@ def _add_product_key(
 def combine_period_files(
     file_paths: list[str | Path],
     classification_client=None,
+    classification_limit: int | None = None,
 ) -> dict[str, object]:
     """
     Запускает основной pipeline для каждого файла
@@ -176,6 +181,8 @@ def combine_period_files(
             .drop_duplicates()
         )
 
+        new_categories_used = 0
+
         for _, category_row in (
             category_pairs.iterrows()
         ):
@@ -191,6 +198,23 @@ def combine_period_files(
                 or not str(leaf_category).strip()
             ):
                 continue
+
+            cached_classification = (
+                get_cached_category_classification(
+                    leaf_category,
+                    root_category=root_category,
+                )
+            )
+
+            if cached_classification is None:
+                if (
+                    classification_limit is not None
+                    and new_categories_used
+                    >= classification_limit
+                ):
+                    continue
+
+                new_categories_used += 1
 
             classified = (
                 classify_category_dataframe_group(

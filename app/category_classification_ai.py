@@ -715,6 +715,7 @@ def classify_category_dataframe_group(
             generate_category_repair(
                 category_name=category_name,
                 classification=classification,
+                resolution_evidence=resolutions,
                 unresolved_products=needs_resolution,
                 client=client,
                 model=model,
@@ -777,6 +778,7 @@ def build_category_repair_prompt(
     category_name: object,
     classification: CategoryClassification,
     unresolved_products: list[object],
+    resolution_evidence: list[dict[str, object]] | None = None,
 ) -> str:
     """
     Формирует prompt для проверки,
@@ -805,6 +807,35 @@ def build_category_repair_prompt(
 
         unresolved.append(normalized)
 
+    evidence = []
+
+    for item in resolution_evidence or []:
+        product_name = normalize_niche_text(
+            item.get("product_name")
+        )
+
+        family_name = str(
+            item.get("family_name", "")
+        ).strip()
+
+        confidence = item.get(
+            "confidence"
+        )
+
+        if (
+            not product_name
+            or not family_name
+        ):
+            continue
+
+        evidence.append(
+            {
+                "product_name": product_name,
+                "family_name": family_name,
+                "confidence": confidence,
+            }
+        )
+
     return f"""
 Ты проверяешь уже существующую классификацию
 товарной категории маркетплейса.
@@ -826,10 +857,60 @@ UNRESOLVED PRODUCTS:
     indent=2,
 )}
 
+RESOLUTION EVIDENCE:
+{json.dumps(
+    evidence,
+    ensure_ascii=False,
+    indent=2,
+)}
+
+Используй RESOLUTION EVIDENCE как подтверждённые примеры
+связи товар → functional_family.
+
+Если несколько таких примеров показывают устойчивый
+отличительный термин для уже существующей family,
+можно добавить этот термин в keywords этой family.
+
+Не добавляй:
+- бренды;
+- модели;
+- размеры;
+- мощность;
+- случайные общие слова.
+
 ЗАДАЧА:
 
-Проверь, не пропущено ли отдельное
-functional_family.
+У тебя две независимые задачи.
+
+A. ENRICH EXISTING FAMILY KEYWORDS
+
+Используй RESOLUTION EVIDENCE, чтобы улучшить
+keywords уже существующих functional_family.
+
+Если товар был уверенно отнесён к существующей
+family, проверь, содержит ли его название
+устойчивый функциональный термин, которого ещё
+нет в keywords этой family.
+
+Такой термин можно добавить, если он:
+
+- описывает тип или назначение товара;
+- помогает отличать эту family от других;
+- применим не только к одной конкретной карточке;
+- не является брендом или моделью;
+- не является цветом, размером или мощностью;
+- не является случайным общим словом.
+
+Не добавляй весь product_name как keyword.
+
+Не добавляй слишком общие слова вроде:
+"насос", "товар", "комплект", "оборудование",
+если они не различают functional_family.
+
+B. FIND MISSING FUNCTIONAL FAMILIES
+
+Проверь UNRESOLVED PRODUCTS и определи,
+не пропущено ли отдельное functional_family.
 
 Важно:
 
@@ -838,11 +919,15 @@ functional_family.
 2. Не переименовывай существующие
 functional_family.
 
-3. Добавляй новое семейство только если
+3. Для существующих family разрешено добавлять
+новые полезные keywords на основании
+RESOLUTION EVIDENCE.
+
+4. Добавляй новое семейство только если
 unresolved товар действительно представляет
 отдельный конкурентный тип товара.
 
-4. Не создавай новое семейство только из-за:
+5. Не создавай новое семейство только из-за:
 - бренда;
 - цвета;
 - размера;
@@ -850,22 +935,24 @@ unresolved товар действительно представляет
 - комплектации;
 - battery / petrol / electric.
 
-5. Основной товар и аксессуар могут быть
+6. Основной товар и аксессуар могут быть
 разными functional_family.
 
-6. Если нового семейства не требуется,
-сохрани текущую структуру без изменений.
+7. Даже если нового семейства не требуется,
+всё равно проверь, можно ли безопасно улучшить
+keywords существующих family по
+RESOLUTION EVIDENCE.
 
-7. Верни ПОЛНУЮ обновленную классификацию,
+8. Верни ПОЛНУЮ обновлённую классификацию,
 включая все существующие семейства.
 
-8. Названия новых functional_family:
+9. Названия новых functional_family:
 - английский;
 - lowercase;
 - snake_case;
 - короткие и стабильные.
 
-9. confidence — число от 0 до 1.
+10. confidence — число от 0 до 1.
 
 Не анализируй спрос, продажи,
 конкуренцию или прибыльность.
@@ -877,6 +964,7 @@ def generate_category_repair(
     unresolved_products: list[object],
     client,
     model: str = "gpt-5-nano",
+    resolution_evidence: list[dict[str, object]] | None = None,
 ) -> CategoryClassification:
     """
     Проверяет существующую классификацию
@@ -888,6 +976,7 @@ def generate_category_repair(
         category_name=category_name,
         classification=classification,
         unresolved_products=unresolved_products,
+        resolution_evidence=resolution_evidence,
     )
 
     repair_schema = json.loads(
@@ -938,16 +1027,101 @@ def generate_category_repair(
         for rule in repaired_rules
     }
 
+    evidence_products_by_family = {}
+
+    for item in resolution_evidence or []:
+        if not isinstance(item, dict):
+            continue
+
+        family_name = str(
+            item.get("family_name", "")
+        ).strip()
+
+        product_name = normalize_niche_text(
+            item.get("product_name")
+        )
+
+        if (
+            not family_name
+            or not product_name
+        ):
+            continue
+
+        evidence_products_by_family.setdefault(
+            family_name,
+            [],
+        ).append(product_name)
+
     merged_rules = []
 
     for rule in classification.functional_families:
-        merged_rules.append(
-            repaired_by_name.get(
+        repaired_rule = repaired_by_name.get(
+            rule.name
+        )
+
+        if repaired_rule is None:
+            merged_rules.append(rule)
+            continue
+
+        existing_keywords = list(
+            rule.keywords
+        )
+
+        existing_normalized = {
+            normalize_niche_text(keyword)
+            for keyword in rule.keywords
+        }
+
+        evidence_products = (
+            evidence_products_by_family.get(
                 rule.name,
-                rule,
+                [],
             )
         )
 
+        accepted_new_keywords = []
+
+        for keyword in repaired_rule.keywords:
+            normalized_keyword = normalize_niche_text(
+                keyword
+            )
+
+            if not normalized_keyword:
+                continue
+
+            # Старые keywords всегда сохраняем.
+            if normalized_keyword in existing_normalized:
+                continue
+
+            # Новый keyword для существующей family
+            # разрешён только при прямом подтверждении
+            # хотя бы одним product_name этой family.
+            if not any(
+                normalized_keyword in product_name
+                for product_name in evidence_products
+            ):
+                continue
+
+            accepted_new_keywords.append(
+                keyword
+            )
+
+        merged_keywords = tuple(
+            dict.fromkeys(
+                (
+                    *existing_keywords,
+                    *accepted_new_keywords,
+                )
+            )
+        )
+
+        merged_rules.append(
+            FunctionalFamilyRule(
+                name=rule.name,
+                keywords=merged_keywords,
+            )
+        )
+        
     existing_names = {
         rule.name
         for rule in classification.functional_families

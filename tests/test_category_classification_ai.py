@@ -940,6 +940,137 @@ def test_cached_category_can_be_explicitly_enriched(
         for family in families
     ]
 
+def test_cached_enrichment_persists_resolution_evidence(
+    tmp_path,
+):
+    cache_path = tmp_path / "categories.json"
+
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=("насосная станция",),
+            ),
+            FunctionalFamilyRule(
+                name="surface_pump",
+                keywords=("поверхностный насос",),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    save_category_classification(
+        classification,
+        cache_path,
+        root_category="Дом и сад",
+    )
+
+    dataframe = pd.DataFrame(
+        {
+            "root_category": [
+                "Дом и сад",
+            ],
+            "leaf_category": [
+                "Поверхностные насосы",
+            ],
+            "product_name": [
+                "Автономная станция водоснабжения ASV 4200P",
+            ],
+        }
+    )
+
+    class FakeResponses:
+        def __init__(self):
+            self.call_count = 0
+
+        def create(self, **kwargs):
+            self.call_count += 1
+
+            if self.call_count == 1:
+                return SimpleNamespace(
+                    output_text=json.dumps(
+                        {
+                            "resolutions": [
+                                {
+                                    "product_name": (
+                                        "автономная станция "
+                                        "водоснабжения asv 4200p"
+                                    ),
+                                    "family_name": "pump_station",
+                                    "confidence": 0.94,
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+
+            prompt = kwargs["input"]
+
+            assert "RESOLUTION EVIDENCE" in prompt
+            assert (
+                "автономная станция водоснабжения asv 4200p"
+                in prompt
+            )
+            assert '"family_name": "pump_station"' in prompt
+
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "pump_station",
+                                "keywords": [
+                                    "насосная станция",
+                                    "станция водоснабжения",
+                                ],
+                            },
+                            {
+                                "name": "surface_pump",
+                                "keywords": [
+                                    "поверхностный насос",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    classify_category_dataframe_group(
+        dataframe=dataframe,
+        category_name="Поверхностные насосы",
+        root_category="Дом и сад",
+        client=fake_client,
+        cache_path=cache_path,
+        enrich_cached=True,
+    )
+
+    saved = json.loads(
+        cache_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    families = {
+        family["name"]: family["keywords"]
+        for family in saved[
+            "дом и сад:поверхностные насосы"
+        ]["functional_families"]
+    }
+
+    assert "станция водоснабжения" in families[
+        "pump_station"
+    ]
+
 def test_build_category_repair_prompt_keeps_existing_families():
     classification = CategoryClassification(
         category_name=(
@@ -981,6 +1112,63 @@ def test_build_category_repair_prompt_keeps_existing_families():
         "не пропущено ли отдельное"
         in prompt.lower()
     )
+
+def test_build_category_repair_prompt_includes_resolution_evidence():
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=("насосная станция",),
+            ),
+            FunctionalFamilyRule(
+                name="surface_pump",
+                keywords=("поверхностный насос",),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    prompt = build_category_repair_prompt(
+        category_name="Поверхностные насосы",
+        classification=classification,
+        unresolved_products=[
+            "Неясный насос",
+        ],
+        resolution_evidence=[
+            {
+                "product_name": (
+                    "Автономная станция водоснабжения ASV 4200P"
+                ),
+                "family_name": "pump_station",
+                "confidence": 0.94,
+            },
+            {
+                "product_name": (
+                    "Насос поверхностный 1100 Вт"
+                ),
+                "family_name": "surface_pump",
+                "confidence": 0.91,
+            },
+        ],
+    )
+
+    assert "RESOLUTION EVIDENCE" in prompt
+
+    assert (
+        "автономная станция водоснабжения asv 4200p"
+        in prompt
+    )
+
+    assert '"family_name": "pump_station"' in prompt
+
+    assert (
+        "насос поверхностный 1100 вт"
+        in prompt
+    )
+
+    assert '"family_name": "surface_pump"' in prompt
 
 def test_generate_category_repair_adds_missing_family():
     classification = CategoryClassification(
@@ -1433,3 +1621,244 @@ def test_generate_category_repair_restricts_category_type_schema():
     )
 
     assert repaired.category_type == "mixed"
+
+def test_generate_category_repair_passes_resolution_evidence():
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=("насосная станция",),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            prompt = kwargs["input"]
+
+            assert "RESOLUTION EVIDENCE" in prompt
+            assert (
+                "автономная станция водоснабжения"
+                in prompt
+            )
+            assert '"family_name": "pump_station"' in prompt
+
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "pump_station",
+                                "keywords": [
+                                    "насосная станция",
+                                    "станция водоснабжения",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    result = generate_category_repair(
+        category_name="Поверхностные насосы",
+        classification=classification,
+        unresolved_products=[
+            "Неясный насос",
+        ],
+        resolution_evidence=[
+            {
+                "product_name": (
+                    "Автономная станция водоснабжения"
+                ),
+                "family_name": "pump_station",
+                "confidence": 0.94,
+            },
+        ],
+        client=fake_client,
+    )
+
+    assert result.functional_families[0].keywords == (
+        "насосная станция",
+        "станция водоснабжения",
+    )
+
+def test_repair_prompt_requires_existing_family_keyword_enrichment():
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=("насосная станция",),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    prompt = build_category_repair_prompt(
+        category_name="Поверхностные насосы",
+        classification=classification,
+        unresolved_products=[
+            "Автономная станция водоснабжения ASV 4200P",
+        ],
+        resolution_evidence=[
+            {
+                "product_name": (
+                    "Автономная станция водоснабжения ASV 4200P"
+                ),
+                "family_name": "pump_station",
+                "confidence": 0.94,
+            },
+        ],
+    )
+
+    assert "ENRICH EXISTING FAMILY KEYWORDS" in prompt
+
+    assert (
+        "сохрани текущую структуру без изменений"
+        not in prompt
+    )
+
+    assert (
+        "станция водоснабжения"
+        in prompt
+    )
+
+def test_category_repair_preserves_existing_family_keywords():
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=(
+                    "насосная станция",
+                    "pump_station",
+                ),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "pump_station",
+                                "keywords": [
+                                    "автоматическая",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    repaired = generate_category_repair(
+        category_name="Поверхностные насосы",
+        classification=classification,
+        unresolved_products=[],
+        resolution_evidence=[],
+        client=fake_client,
+    )
+
+    keywords = repaired.functional_families[0].keywords
+
+    assert "насосная станция" in keywords
+    assert "pump_station" in keywords
+    
+    # Старые keywords сохраняются,
+    # но неподтверждённый новый keyword
+    # не должен приниматься.
+    assert "автоматическая" not in keywords
+
+def test_category_repair_rejects_unsupported_new_keywords():
+    classification = CategoryClassification(
+        category_name="Поверхностные насосы",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="pump_station",
+                keywords=(
+                    "насосная станция",
+                    "pump_station",
+                ),
+            ),
+        ),
+        confidence=0.8,
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "pump_station",
+                                "keywords": [
+                                    "насосная станция",
+                                    "pump_station",
+                                    "автоматическая",
+                                    "станция водоснабжения",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    repaired = generate_category_repair(
+        category_name="Поверхностные насосы",
+        classification=classification,
+        unresolved_products=[],
+        resolution_evidence=[
+            {
+                "product_name": (
+                    "Автономная станция водоснабжения ASV 4200P"
+                ),
+                "family_name": "pump_station",
+                "confidence": 0.94,
+            },
+        ],
+        client=fake_client,
+    )
+
+    keywords = repaired.functional_families[0].keywords
+
+    assert "насосная станция" in keywords
+    assert "pump_station" in keywords
+
+    # Есть прямое подтверждение в product_name.
+    assert "станция водоснабжения" in keywords
+
+    # В evidence такого термина нет —
+    # AI не должен иметь права сохранить его.
+    assert "автоматическая" not in keywords

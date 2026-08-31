@@ -115,6 +115,7 @@ def combine_period_files(
     file_paths: list[str | Path],
     classification_client=None,
     classification_limit: int | None = None,
+    enrich_cached: bool = False,
 ) -> dict[str, object]:
     """
     Запускает основной pipeline для каждого файла
@@ -222,6 +223,7 @@ def combine_period_files(
                     category_name=leaf_category,
                     root_category=root_category,
                     client=classification_client,
+                    enrich_cached=enrich_cached,
                 )
             )
 

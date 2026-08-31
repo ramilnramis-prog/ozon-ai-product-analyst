@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 import app.multi_period as multi_period
 
@@ -300,6 +301,78 @@ def test_combine_period_files_limits_category_classification_calls(
     )
 
     assert len(calls) == 2
+
+
+def test_combine_period_files_passes_enrich_cached_to_classifier(
+    monkeypatch,
+):
+    source = pd.DataFrame(
+        {
+            "product_name": [
+                "Неясный товар",
+            ],
+            "category": [
+                "Дом и сад/Категория A",
+            ],
+            "period_start": pd.to_datetime(
+                [
+                    "2026-07-01",
+                ]
+            ),
+        }
+    )
+
+    monkeypatch.setattr(
+        multi_period,
+        "run_analysis_pipeline",
+        lambda file_path: {
+            "success": True,
+            "dataframe": source.copy(),
+            "inspection": {},
+        },
+    )
+
+    monkeypatch.setattr(
+        multi_period,
+        "get_cached_category_classification",
+        lambda *args, **kwargs: object(),
+    )
+
+    received = []
+
+    def fake_classify_category_dataframe_group(
+        dataframe,
+        category_name,
+        client,
+        root_category=None,
+        enrich_cached=False,
+        **kwargs,
+    ):
+        received.append(enrich_cached)
+
+        raise RuntimeError(
+            "stop after classifier"
+        )
+
+    monkeypatch.setattr(
+        multi_period,
+        "classify_category_dataframe_group",
+        fake_classify_category_dataframe_group,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="stop after classifier",
+    ):
+        multi_period.combine_period_files(
+            ["fake.xlsx"],
+            classification_client=object(),
+            enrich_cached=True,
+        )
+
+    assert received == [
+        True,
+    ]
 
 def test_classification_limit_counts_only_uncached_categories(
     monkeypatch,

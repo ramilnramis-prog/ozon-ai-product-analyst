@@ -794,6 +794,152 @@ def test_cached_category_does_not_call_ai_or_mutate_cache(
         == cache_before
     )
 
+def test_cached_category_can_be_explicitly_enriched(
+    tmp_path,
+):
+    cache_path = tmp_path / "categories.json"
+
+    classification = CategoryClassification(
+        category_name=(
+            "Мотоблоки, культиваторы и электротяпки"
+        ),
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="motoblock",
+                keywords=("мотоблок",),
+            ),
+            FunctionalFamilyRule(
+                name="cultivator",
+                keywords=("культиватор",),
+            ),
+        ),
+        confidence=0.82,
+    )
+
+    save_category_classification(
+        classification,
+        cache_path,
+        root_category="Дом и сад",
+    )
+
+    dataframe = pd.DataFrame(
+        {
+            "root_category": [
+                "Дом и сад",
+            ],
+            "leaf_category": [
+                "Мотоблоки, культиваторы и электротяпки",
+            ],
+            "product_name": [
+                "Электротяпка аккумуляторная",
+            ],
+        }
+    )
+
+    class FakeResponses:
+        def __init__(self):
+            self.call_count = 0
+
+        def create(self, **kwargs):
+            self.call_count += 1
+
+            if self.call_count == 1:
+                return SimpleNamespace(
+                    output_text=json.dumps(
+                        {
+                            "resolutions": [
+                                {
+                                    "product_name": (
+                                        "электротяпка аккумуляторная"
+                                    ),
+                                    "family_name": "unresolved",
+                                    "confidence": 0.3,
+                                }
+                            ]
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+
+            return SimpleNamespace(
+                output_text=json.dumps(
+                    {
+                        "category_type": "mixed",
+                        "functional_families": [
+                            {
+                                "name": "motoblock",
+                                "keywords": [
+                                    "мотоблок",
+                                ],
+                            },
+                            {
+                                "name": "cultivator",
+                                "keywords": [
+                                    "культиватор",
+                                ],
+                            },
+                            {
+                                "name": "electric_hoe",
+                                "keywords": [
+                                    "электротяпка",
+                                ],
+                            },
+                        ],
+                        "confidence": 0.9,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+
+    fake_responses = FakeResponses()
+
+    fake_client = SimpleNamespace(
+        responses=fake_responses
+    )
+
+    result = classify_category_dataframe_group(
+        dataframe=dataframe,
+        category_name=(
+            "Мотоблоки, культиваторы и электротяпки"
+        ),
+        root_category="Дом и сад",
+        client=fake_client,
+        cache_path=cache_path,
+        enrich_cached=True,
+    )
+
+    assert fake_responses.call_count == 2
+
+    assert result[
+        "functional_family"
+    ].tolist() == [
+        "electric_hoe",
+    ]
+
+    assert result[
+        "functional_family_status"
+    ].tolist() == [
+        "matched",
+    ]
+
+    saved = json.loads(
+        cache_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    families = saved[
+        "дом и сад:мотоблоки культиваторы и электротяпки"
+    ][
+        "functional_families"
+    ]
+
+    assert "electric_hoe" in [
+        family["name"]
+        for family in families
+    ]
+
 def test_build_category_repair_prompt_keeps_existing_families():
     classification = CategoryClassification(
         category_name=(

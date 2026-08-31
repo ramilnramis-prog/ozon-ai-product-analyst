@@ -569,6 +569,7 @@ def classify_category_dataframe_group(
     cache_path: Path = DEFAULT_CATEGORY_CACHE_PATH,
     model: str = "gpt-5-nano",
     root_category: object = None,
+    enrich_cached: bool = False,
 ) -> pd.DataFrame:
     """
     Полностью классифицирует товары
@@ -591,6 +592,11 @@ def classify_category_dataframe_group(
 
     was_cached = (
         cached_classification is not None
+    )
+
+    allow_enrichment = (
+       not was_cached
+       or enrich_cached
     )
 
     if was_cached:
@@ -643,12 +649,12 @@ def classify_category_dataframe_group(
                 .tolist()
             ),
         )
-    if not was_cached:
+    if allow_enrichment:
         save_category_classification(
             classification,
             cache_path,
             root_category=root_category,
-        )
+    )
 
     result = apply_category_classification(
         result,
@@ -689,7 +695,7 @@ def classify_category_dataframe_group(
     )
 
     if (
-        not was_cached
+        allow_enrichment
         and needs_resolution
         and allowed_families
     ):

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from app.category_classifier import (
     CategoryClassification,
     FunctionalFamilyRule,
+    save_category_classification,
 )
 
 from app.category_classification_ai import (
@@ -709,6 +710,89 @@ def test_classify_category_dataframe_group_full_flow(
 
     assert "BoxBot" not in saved_text
     assert "мотоблок" in saved_text
+
+def test_cached_category_does_not_call_ai_or_mutate_cache(
+    tmp_path,
+):
+    cache_path = tmp_path / "categories.json"
+
+    classification = CategoryClassification(
+        category_name="Аксессуары",
+        category_type="mixed",
+        functional_families=(
+            FunctionalFamilyRule(
+                name="car_holder",
+                keywords=("держатель",),
+            ),
+        ),
+        confidence=0.9,
+    )
+
+    save_category_classification(
+        classification,
+        cache_path,
+        root_category="Автотовары",
+    )
+
+    cache_before = cache_path.read_text(
+        encoding="utf-8"
+    )
+
+    dataframe = pd.DataFrame(
+        {
+            "root_category": [
+                "Автотовары",
+                "Автотовары",
+            ],
+            "leaf_category": [
+                "Аксессуары",
+                "Аксессуары",
+            ],
+            "product_name": [
+                "Автомобильный держатель",
+                "Неясный автомобильный товар",
+            ],
+        }
+    )
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            raise AssertionError(
+                "AI must not be called for cached category"
+            )
+
+    fake_client = SimpleNamespace(
+        responses=FakeResponses()
+    )
+
+    result = classify_category_dataframe_group(
+        dataframe=dataframe,
+        category_name="Аксессуары",
+        root_category="Автотовары",
+        client=fake_client,
+        cache_path=cache_path,
+    )
+
+    assert result[
+        "functional_family"
+    ].tolist() == [
+        "car_holder",
+        pd.NA,
+    ]
+
+    assert result[
+        "functional_family_status"
+    ].tolist() == [
+        "matched",
+        "unmatched",
+    ]
+
+    assert (
+        cache_path.read_text(
+            encoding="utf-8"
+        )
+        == cache_before
+    )
 
 def test_build_category_repair_prompt_keeps_existing_families():
     classification = CategoryClassification(

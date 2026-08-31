@@ -576,19 +576,34 @@ def classify_category_dataframe_group(
     """
 
     examples = collect_category_examples(
-        dataframe,
-        leaf_category=category_name,
-        root_category=root_category,
+    dataframe,
+    leaf_category=category_name,
+    root_category=root_category,
+)
+
+    cached_classification = (
+        get_cached_category_classification(
+            category_name,
+            cache_path,
+            root_category=root_category,
+        )
     )
 
-    classification = classify_category(
-        category_name=category_name,
-        product_examples=examples,
-        client=client,
-        cache_path=cache_path,
-        model=model,
-        root_category=root_category,
+    was_cached = (
+        cached_classification is not None
     )
+
+    if was_cached:
+        classification = cached_classification
+    else:
+        classification = classify_category(
+            category_name=category_name,
+            product_examples=examples,
+            client=client,
+            cache_path=cache_path,
+            model=model,
+            root_category=root_category,
+        )
 
     normalized_category = normalize_niche_text(
         category_name
@@ -628,7 +643,7 @@ def classify_category_dataframe_group(
                 .tolist()
             ),
         )
-
+    if not was_cached:
         save_category_classification(
             classification,
             cache_path,
@@ -674,7 +689,8 @@ def classify_category_dataframe_group(
     )
 
     if (
-        needs_resolution
+        not was_cached
+        and needs_resolution
         and allowed_families
     ):
         resolutions = generate_family_resolutions(

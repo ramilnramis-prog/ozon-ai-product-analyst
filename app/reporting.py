@@ -157,6 +157,111 @@ def build_category_top(
 
     return result.reset_index(drop=True)
 
+
+def build_leaf_category_top(
+    dataframe: pd.DataFrame,
+    top_n: int = 10,
+) -> pd.DataFrame:
+    """
+    ????????? TOP ??????? ?????? ?????? leaf_category.
+
+    Root category ??????????? ??? ??????????????
+    ??????????? ? UI.
+    """
+
+    required_columns = {
+        "root_category",
+        "leaf_category",
+        "product_name",
+        "opportunity_score",
+    }
+
+    missing_columns = (
+        required_columns - set(dataframe.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            f"Missing leaf category top columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    result = dataframe.copy()
+
+    result = result[
+        result["root_category"].notna()
+        & result["leaf_category"].notna()
+        & result["product_name"].notna()
+    ].copy()
+
+    result["_product_concept_key"] = (
+        result["product_name"]
+        .map(normalize_niche_text)
+    )
+
+    status_priority = {
+        "eligible": 0,
+        "insufficient_competition_data": 1,
+        "rejected_low_market_depth": 2,
+    }
+
+    if "eligibility_status" in result.columns:
+        result["_status_priority"] = (
+            result["eligibility_status"]
+            .map(status_priority)
+            .fillna(1)
+        )
+    else:
+        result["_status_priority"] = 1
+
+    result = result.sort_values(
+        by=[
+            "root_category",
+            "leaf_category",
+            "_status_priority",
+            "opportunity_score",
+        ],
+        ascending=[
+            True,
+            True,
+            True,
+            False,
+        ],
+        na_position="last",
+    )
+
+    result = result.drop_duplicates(
+        subset=[
+            "root_category",
+            "leaf_category",
+            "_product_concept_key",
+        ],
+        keep="first",
+    )
+
+    result["leaf_category_rank"] = (
+        result
+        .groupby(
+            ["root_category", "leaf_category"],
+            dropna=True,
+        )
+        .cumcount()
+        .add(1)
+        .astype("Int64")
+    )
+
+    result = result[
+        result["leaf_category_rank"] <= top_n
+    ].copy()
+
+    return result.drop(
+        columns=[
+            "_product_concept_key",
+            "_status_priority",
+        ]
+    ).reset_index(drop=True)
+
+
 def build_unclassified_top(
     dataframe: pd.DataFrame,
     top_n: int = 10,

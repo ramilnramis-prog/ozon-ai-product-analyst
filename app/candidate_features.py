@@ -54,6 +54,7 @@ def build_candidate_features(
         "sku",
         "category",
         "root_category",
+        "leaf_category",
         "brand",
         "price",
         "sales_units",

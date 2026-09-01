@@ -1533,20 +1533,25 @@ def validate_missing_family_candidate(
         "additionalProperties": False,
     }
 
-    response = client.responses.create(
-        model=model,
-        input=prompt,
-        text={
-            "format": {
-                "type": "json_schema",
-                "name": (
-                    "missing_family_candidate_validation"
-                ),
-                "schema": validation_schema,
-                "strict": True,
-            }
-        },
-    )
+    try:
+        response = client.responses.create(
+            model=model,
+            input=prompt,
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": (
+                        "missing_family_candidate_validation"
+                    ),
+                    "schema": validation_schema,
+                    "strict": True,
+                }
+            },
+        )
+    except Exception as exc:
+        if exc.__class__.__name__ == "APITimeoutError":
+            return None
+        raise
 
     data = json.loads(
         response.output_text

@@ -1,110 +1,237 @@
 # Ozon AI Product Analyst
 
-Portfolio project #3 — AI-assisted marketplace product analytics system.
+An AI-assisted marketplace product research system built with Python, Pandas, OpenAI, and Streamlit.
 
-## Overview
+The application analyzes marketplace XLSX/CSV exports, automatically classifies products into meaningful competitive niches, calculates deterministic business metrics, and ranks promising product opportunities. It is designed as a portfolio MVP that demonstrates a hybrid AI + deterministic analytics architecture.
 
-Ozon AI Product Analyst analyzes marketplace XLSX/CSV exports and identifies promising product opportunities.
+## Key Features
 
-A user uploads marketplace data through a Streamlit interface. The system processes the file, classifies products into meaningful competitive niches, calculates deterministic business metrics, and displays a global TOP plus TOPs by marketplace subcategory.
+- XLSX and CSV marketplace data ingestion
+- Semantic source-column mapping for changing file schemas
+- Data validation, normalization, and cleaning
+- Automatic category classification with OpenAI Structured Outputs
+- Cache-first reuse of previously learned category rules
+- Functional-family classification inside broad marketplace categories
+- Product-role enrichment where applicable
+- Niche-level competition analytics
+- Active seller and strong seller analysis
+- Market depth and concentration metrics
+- Deterministic eligibility and opportunity scoring
+- Global product TOP ranking
+- TOP ranking by root category and marketplace subcategory
+- High-competition warnings
+- No forced winners in weak or low-depth markets
+- Streamlit web interface
+- Graceful continuation when an individual category AI request times out
+- Automated pytest test suite
 
-## Core principle
+## Demo
 
-Python calculates business facts and scores. AI is used for semantic tasks only.
+### 1. Upload Marketplace Data
+
+Upload one or more XLSX/CSV files through the Streamlit interface.
+
+![Upload marketplace data](docs/screenshots/01-upload.png)
+
+### 2. Global Product Ranking
+
+The system processes the uploaded dataset, calculates business metrics, filters unsuitable candidates, and builds a global opportunity ranking.
+
+![Global product ranking](docs/screenshots/02-global-top.png)
+
+### 3. Category-Level Opportunities
+
+The same analysis is broken down by root category and marketplace subcategory so users can inspect the strongest candidates inside each market segment.
+
+![Category-level opportunities](docs/screenshots/03-category-top.png)
+
+### 4. No Forced Winners
+
+If a subcategory does not contain an eligible opportunity, the application explicitly reports that no suitable TOP candidate exists instead of ranking the least-bad option.
+
+![No forced winners](docs/screenshots/04-no-forced-winner.png)
+
+## Architecture
+
+The application is split into several analytical layers.
+
+### 1. Streamlit Interface
+
+- Uploads XLSX/CSV marketplace files
+- Starts the analysis pipeline
+- Displays processed-file and candidate counts
+- Shows the global TOP
+- Shows TOP candidates by category and subcategory
+- Hides internal technical fields from the end user
+
+### 2. Data Ingestion and Semantic Mapping
+
+- Loads XLSX and CSV files
+- Detects and maps source columns
+- Supports changing marketplace export schemas
+- Validates required analytical inputs before downstream processing
+
+### 3. Normalization and Product Attributes
+
+- Cleans and normalizes raw marketplace data
+- Creates stable product attributes
+- Normalizes category values
+- Prepares data for deterministic grouping and scoring
+
+### 4. AI Category Classification
+
+Unknown categories are analyzed from real product examples.
+
+```text
+known category
+-> cached rules
+-> deterministic Python classification
+
+unknown category
+-> product examples
+-> OpenAI Structured Output
+-> functional-family rules
+-> Python quality checks
+-> runtime cache
+-> deterministic Python classification thereafter
+```
+
+AI is used for semantic interpretation. It does not calculate the final business score.
+
+### 5. Runtime Classification Cache
+
+Learned category classifications are stored in:
+
+```text
+data/cache/category_classifications.json
+```
+
+When the same category appears in a later file, the system reuses the cached rules instead of repeating the same AI classification work.
+
+Cached rules can also be enriched when a genuinely missing functional family is detected. New rules are accepted only when deterministic quality gates confirm that classification quality does not regress.
+
+### 6. Competition Analytics
+
+The system calculates competition at the niche level rather than treating every broad marketplace category as one market.
+
+It evaluates:
+
+- active sellers
+- strong sellers
+- market depth
+- market concentration
+- top-seller shares
+- high-competition warnings
+- niche-level demand and opportunity metrics.
+
+SKU count is not treated as seller count.
+
+### 7. Deterministic Scoring and Ranking
+
+Python is responsible for business calculations.
 
 ```text
 Python calculates.
 AI interprets.
 ```
 
-AI does not calculate the final business opportunity score.
+The pipeline applies deterministic eligibility rules and opportunity scoring before ranking products.
 
-## Pipeline
+A TOP candidate means:
 
-```text
-XLSX / CSV
-→ ingestion
-→ semantic column mapping
-→ validation
-→ normalization and cleaning
-→ product/category attributes
-→ functional-family classification
-→ niche grouping
-→ competition analytics
-→ candidate features
-→ deterministic scoring and eligibility
-→ ranking
-→ grounded AI interpretation
-→ Streamlit UI
+> a promising marketplace opportunity worth deeper investigation.
+
+It is not a guaranteed recommendation to launch or purchase a product.
+
+## Input Data
+
+The application accepts:
+
+- `.xlsx`
+- `.csv`
+- multiple files in one analysis run
+
+The project is not tied to one hard-coded marketplace export schema. Source columns are mapped semantically before validation and normalization.
+
+The analytical pipeline expects enough source data to derive product identity, categories, pricing, sales, revenue, and competition-related metrics. Invalid or insufficient inputs are rejected or excluded from the relevant analytical stage rather than silently fabricated.
+
+## How to Run
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/ramilnramis-prog/ozon-ai-product-analyst.git
+
+cd ozon-ai-product-analyst
 ```
 
-## Automatic category classification
+### 2. Create and activate a vitual environment
 
-The project does not require a manually hard-coded taxonomy of all marketplace categories.
+Windows PowerShell:
 
-```text
-known category
-→ cached rules
-→ deterministic Python classification
+```powershell
+python -m venv .venv
 
-unknown category
-→ real product examples
-→ AI semantic analysis
-→ structured functional-family rules
-→ Python quality checks
-→ runtime cache
-→ deterministic Python classification thereafter
+.\.venv\Scripts\Activate.ps1
 ```
 
-If a known category later contains a genuinely missing product family, the cache can be enriched. New rules are accepted only when deterministic quality checks confirm that classification quality does not regress.
+### 3. Install dependencies
 
-## Functional families and niches
+Application dependencies:
 
-A broad marketplace category is not automatically treated as one competitive niche.
-
-```text
-category
-→ functional_family
-→ product_role where applicable
-→ niche_key
-→ competition analytics
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-## Competition analytics
+Development and testing dependencies:
 
-The system evaluates active sellers, strong sellers, market depth, concentration, seller shares, competition warnings, and niche-level demand/opportunity. SKU count is not treated as seller count. Weak niches may legitimately have no suitable TOP candidate.
+```powershell
+python -m pip install -r requirements-dev.txt
+```
 
-## Streamlit interface
+### 4. Configure environment variables
 
-The UI supports XLSX/CSV upload, multiple files, automatic analysis, a global TOP, TOP by root and leaf category, eligible-only category TOPs, cached category reuse, and limited AI classification per UI run.
+Create `.env` from `.env.example` and fill in the required local values.
 
-Run:
+The `.env` file is excluded from Git and should never be committed.
+
+### 5. Start the Streamlit application
 
 ```powershell
 python -m streamlit run streamlit_app.py
 ```
 
-## Installation
+Streamlit will print the local application URL in the terminal.
 
-Recommended: Python 3.13
+### 6. Upload marketplace data
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-```
+Open the application in the browser, upload an XLSX/CSV file, and click **Запустить анализ**.
 
-Create `.env` from `.env.example` and configure the OpenAI API key locally. Do not commit `.env`.
+The current portfolio UI limits first-time AI classification to a small number of previously unseen categories per run to control API latency and cost. Cached categories are still processed automatically through Python.
 
-## Tests
+### 7. Run automated tests
 
 ```powershell
 python -m pytest -q
 ```
 
-Current verified checkpoint: `129 passed`.
+## Testing
 
-## Important modules
+The project includes automated tests for ingestion, normalization, category classification, cached enrichment, niche grouping, competition analytics, scoring, ranking, reporting, and multi-period orchestration.
+
+Current verified test suite:
+
+```text
+129 passed
+```
+
+Run the full suite with:
+
+```powershell
+python -m pytest -q
+```
+
+## Core Modules
 
 ```text
 app/data_loader.py
@@ -124,16 +251,16 @@ app/multi_period.py
 streamlit_app.py
 ```
 
-## Runtime category cache
+## MVP Scope
 
-Learned category classifications are stored in `data/cache/category_classifications.json`. Known categories can therefore be reused without repeating the same AI classification work.
+This repository is a portfolio MVP rather than a production SaaS.
 
-## MVP limitations
+Current scope intentionally excludes:
 
-This is a portfolio MVP rather than a production SaaS. Current limitations include Streamlit instead of a separate frontend/backend, file-based runtime cache, first-time AI calls for unknown categories, external API latency, and no authentication/billing/multi-user concurrency.
+- user authentication
+- billing
+- multi-user concurrency
+- production deployment infrastructure
+- external database-backed cache storage
 
-## Project goal
-
-A TOP candidate means a promising marketplace opportunity worth deeper investigation, not a guaranteed recommendation to launch a product.
-
-The project demonstrates a hybrid AI + deterministic analytics architecture where AI handles changing marketplace semantics while Python remains responsible for reproducible business calculations.
+The focus of the project is the analytical architecture: combining semantic AI classification with deterministic, testable marketplace analytics.

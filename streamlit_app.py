@@ -94,10 +94,55 @@ if uploaded_files and st.button(
 
         st.subheader("Общий TOP")
 
-        global_top = report.head(20)
+        global_top = report.head(20).copy()
+
+        global_top.insert(
+            0,
+            "\u041c\u0435\u0441\u0442\u043e",
+            range(1, len(global_top) + 1),
+        )
+
+        global_columns = {
+            "\u041c\u0435\u0441\u0442\u043e": "\u041c\u0435\u0441\u0442\u043e",
+            "product_name": "\u0422\u043e\u0432\u0430\u0440",
+            "root_category": "\u041a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+            "leaf_category": "\u041f\u043e\u0434\u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u044f",
+            "opportunity_score": "\u041e\u0446\u0435\u043d\u043a\u0430",
+            "latest_price": "\u0426\u0435\u043d\u0430, \u20bd",
+            "latest_sales_per_day": "\u041f\u0440\u043e\u0434\u0430\u0436\u0438/\u0434\u0435\u043d\u044c",
+            "active_seller_count": "\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u043e\u0432",
+            "strong_seller_count": "\u0421\u0438\u043b\u044c\u043d\u044b\u0445 \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u043e\u0432",
+            "high_competition_warning": "\u0412\u044b\u0441\u043e\u043a\u0430\u044f \u043a\u043e\u043d\u043a\u0443\u0440\u0435\u043d\u0446\u0438\u044f",
+        }
+
+        visible_global = [
+            column
+            for column in global_columns
+            if column in global_top.columns
+        ]
+
+        global_display = (
+            global_top[visible_global]
+            .rename(columns=global_columns)
+        )
+
+        competition_column = (
+            "\u0412\u044b\u0441\u043e\u043a\u0430\u044f "
+            "\u043a\u043e\u043d\u043a\u0443\u0440\u0435\u043d\u0446\u0438\u044f"
+        )
+
+        if competition_column in global_display.columns:
+            global_display[competition_column] = (
+                global_display[competition_column]
+                .map({
+                    True: "\u0414\u0430",
+                    False: "\u041d\u0435\u0442",
+                })
+                .fillna("\u2014")
+            )
 
         st.dataframe(
-            global_top,
+            global_display,
             use_container_width=True,
             hide_index=True,
         )
@@ -170,28 +215,46 @@ if uploaded_files and st.button(
                             )
                             continue
 
+                        column_names = {
+                            "leaf_category_rank": "\u041c\u0435\u0441\u0442\u043e",
+                            "product_name": "\u0422\u043e\u0432\u0430\u0440",
+                            "opportunity_score": "\u041e\u0446\u0435\u043d\u043a\u0430",
+                            "latest_price": "\u0426\u0435\u043d\u0430, \u20bd",
+                            "latest_sales_per_day": "\u041f\u0440\u043e\u0434\u0430\u0436\u0438/\u0434\u0435\u043d\u044c",
+                            "active_seller_count": "\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0445 \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u043e\u0432",
+                            "strong_seller_count": "\u0421\u0438\u043b\u044c\u043d\u044b\u0445 \u043f\u0440\u043e\u0434\u0430\u0432\u0446\u043e\u0432",
+                            "high_competition_warning": "\u0412\u044b\u0441\u043e\u043a\u0430\u044f \u043a\u043e\u043d\u043a\u0443\u0440\u0435\u043d\u0446\u0438\u044f",
+                        }
+
                         visible_columns = [
                             column
-                            for column in [
-                                "leaf_category_rank",
-                                "product_name",
-                                "opportunity_score",
-                                "eligibility_status",
-                                "latest_price",
-                                "latest_sales_per_day",
-                                "active_seller_count",
-                                "strong_seller_count",
-                                "high_competition_warning",
-                                "functional_family",
-                                "niche_key",
-                            ]
+                            for column in column_names
                             if column in top_data.columns
                         ]
 
+                        display_data = (
+                            top_data[visible_columns]
+                            .rename(columns=column_names)
+                            .copy()
+                        )
+
+                        competition_column = (
+                            "\u0412\u044b\u0441\u043e\u043a\u0430\u044f "
+                            "\u043a\u043e\u043d\u043a\u0443\u0440\u0435\u043d\u0446\u0438\u044f"
+                        )
+
+                        if competition_column in display_data.columns:
+                            display_data[competition_column] = (
+                                display_data[competition_column]
+                                .map({
+                                    True: "\u0414\u0430",
+                                    False: "\u041d\u0435\u0442",
+                                })
+                                .fillna("\u2014")
+                            )
+
                         st.dataframe(
-                            top_data[
-                                visible_columns
-                            ],
+                            display_data,
                             use_container_width=True,
                             hide_index=True,
                         )

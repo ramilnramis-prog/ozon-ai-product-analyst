@@ -217,15 +217,20 @@ def combine_period_files(
 
                 new_categories_used += 1
 
-            classified = (
-                classify_category_dataframe_group(
-                    dataframe=combined,
-                    category_name=leaf_category,
-                    root_category=root_category,
-                    client=classification_client,
-                    enrich_cached=enrich_cached,
+            try:
+                classified = (
+                    classify_category_dataframe_group(
+                        dataframe=combined,
+                        category_name=leaf_category,
+                        root_category=root_category,
+                        client=classification_client,
+                        enrich_cached=enrich_cached,
+                    )
                 )
-            )
+            except Exception as exc:
+                if exc.__class__.__name__ == "APITimeoutError":
+                    continue
+                raise
 
             for column in (
                 "functional_family",

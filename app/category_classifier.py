@@ -447,6 +447,62 @@ def match_product_to_category_classification(
         matches
     )
 
+    # Если несколько family совпали, явное название
+    # типа товара в начале product_name может
+    # детерминированно разрешить конфликт.
+    #
+    # Пример общего принципа:
+    # "Тип товара X / вторичное описание Y"
+    #
+    # Если prefix-match принадлежит ровно одной
+    # из уже совпавших family, выбираем её.
+    # Если prefix-family несколько, ambiguity
+    # сохраняется.
+    if status == "ambiguous":
+        normalized_name = normalize_niche_text(
+            product_name
+        )
+
+        prefix_families = []
+
+        for rule in rules:
+            if rule.name not in matches:
+                continue
+
+            has_prefix_keyword = any(
+                (
+                    normalized_name
+                    == normalized_keyword
+                    or normalized_name.startswith(
+                        normalized_keyword + " "
+                    )
+                )
+                for keyword in rule.keywords
+                if (
+                    normalized_keyword
+                    := normalize_niche_text(
+                        keyword
+                    )
+                )
+            )
+
+            if has_prefix_keyword:
+                prefix_families.append(
+                    rule.name
+                )
+
+        unique_prefix_families = tuple(
+            dict.fromkeys(
+                prefix_families
+            )
+        )
+
+        if len(unique_prefix_families) == 1:
+            return (
+                unique_prefix_families,
+                "matched",
+            )
+
     return matches, status
 
 def apply_category_classification(

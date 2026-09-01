@@ -284,11 +284,8 @@ def test_match_product_to_category_classification():
         )
     )
 
-    assert matches == (
-        "cultivator",
-        "electric_tiller",
-    )
-    assert status == "ambiguous"
+    assert matches == ("cultivator",)
+    assert status == "matched"
 
 def test_apply_category_classification_to_dataframe():
     classification = CategoryClassification(
@@ -332,7 +329,7 @@ def test_apply_category_classification_to_dataframe():
         "functional_family_status"
     ].tolist() == [
         "matched",
-        "ambiguous",
+        "matched",
         "unmatched",
     ]
 
@@ -341,12 +338,10 @@ def test_apply_category_classification_to_dataframe():
         "functional_family",
     ] == "walk_behind_tractor"
 
-    assert pd.isna(
-        result.loc[
-            1,
-            "functional_family",
-        ]
-    )
+    assert result.loc[
+        1,
+        "functional_family",
+    ] == "cultivator"
 
     assert pd.isna(
         result.loc[
